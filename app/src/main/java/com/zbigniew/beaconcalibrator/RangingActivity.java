@@ -50,7 +50,7 @@ public class RangingActivity extends AppCompatActivity implements BeaconConsumer
     private int counter2 = 0, pointCounter = 0;
 
     private int[][] dane = new int[6][150];
-    private Map<Beacon, Integer> beacony;
+    //private Map<Beacon, int[]> beacony;
     MediaPlayer mp;
 
     private EditText pointValueET;
@@ -89,7 +89,11 @@ public class RangingActivity extends AppCompatActivity implements BeaconConsumer
 
         switch (id) {
             case R.id.action_save:
-                pointCounter = Integer.parseInt(pointValueET.getText().toString());
+                pointCounter = Integer.parseInt(pointValueET.getText().toString())-1;
+                runOnUiThread(new Runnable() {
+                    public void run() {
+                        Toast.makeText(getApplicationContext(), "Zapisano zmiany!", Toast.LENGTH_SHORT).show();
+                    }});
                 return true;
             case R.id.action_start:
                 pointCounter = Integer.parseInt(pointValueET.getText().toString());
@@ -123,7 +127,7 @@ public class RangingActivity extends AppCompatActivity implements BeaconConsumer
     public void didRangeBeaconsInRegion(Collection<Beacon> beacons, Region region) {
         runOnUiThread(new Runnable() {
             public void run() {
-                iteracje.setText(String.valueOf(counter2));
+                iteracje.setText(String.valueOf(counter2+1));
                 log.setText("Iteracja: "+String.valueOf(counter2)+"\n");
             }
         });
@@ -236,13 +240,16 @@ public class RangingActivity extends AppCompatActivity implements BeaconConsumer
     }
 
     private void saveArrayToFile() {
+        File dir = new File("/sdcard/Beacon_Kalibrator/");
         File file = new File("/sdcard/Beacon_Kalibrator/Beacon_Kalibracja_" + pointCounter + ".txt");
-        File json = new File("/sdcard/Beacon_Kalibrator/Beacon_Kalibracja_" + pointCounter + ".json");
+        File dat = new File("/sdcard/Beacon_Kalibrator/Beacon_Kalibracja_" + pointCounter + ".dat");
+
 
 
 
         if (!file.exists()) {
             try {
+                dir.mkdirs();
                 file.createNewFile();
             } catch (IOException e) {
                 e.printStackTrace();
@@ -250,7 +257,7 @@ public class RangingActivity extends AppCompatActivity implements BeaconConsumer
         }
 
         try {
-            FileOutputStream fos = new FileOutputStream(json);
+            FileOutputStream fos = new FileOutputStream(dat);
             ObjectOutputStream oos = new ObjectOutputStream(fos);
             oos.writeObject(dane);
         } catch (Exception e) {
