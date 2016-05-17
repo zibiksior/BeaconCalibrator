@@ -8,7 +8,9 @@ import android.content.Context;
 import android.content.DialogInterface;
 import android.content.pm.PackageManager;
 import android.media.MediaPlayer;
+import android.os.CountDownTimer;
 import android.os.Handler;
+import android.os.Looper;
 import android.os.RemoteException;
 import android.support.v4.app.ActivityCompat;
 import android.support.v4.content.ContextCompat;
@@ -21,6 +23,7 @@ import android.util.Log;
 import android.view.Menu;
 import android.view.MenuItem;
 import android.view.View;
+import android.view.WindowManager;
 import android.widget.EditText;
 import android.widget.TextView;
 import android.widget.Toast;
@@ -42,10 +45,15 @@ import java.io.InputStreamReader;
 import java.io.ObjectOutputStream;
 import java.util.Collection;
 import java.util.Map;
+import java.util.Timer;
+import java.util.TimerTask;
 
 public class RangingActivity extends AppCompatActivity implements BeaconConsumer, RangeNotifier, View.OnClickListener {
 
     private BeaconManager mBeaconManager;
+    private Region region = new Region("all-beacons-region", null, null, null);
+
+
     final private int FINE_LOCATION_REQUEST = 123, WRITE_SDCARD_REQUEST = 123;
     private int counter2 = 0, pointCounter = 0;
 
@@ -59,6 +67,8 @@ public class RangingActivity extends AppCompatActivity implements BeaconConsumer
     private static final int ITERACJE = 149;//value=149
     private final BluetoothAdapter mBluetoothAdapter = BluetoothAdapter.getDefaultAdapter();
 
+    Timer timer = new Timer();
+
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
@@ -71,6 +81,8 @@ public class RangingActivity extends AppCompatActivity implements BeaconConsumer
         pointValueET = (EditText) findViewById(R.id.pointValueEditText);
         rssi = (TextView) findViewById(R.id.message);
         iteracje = (TextView) findViewById(R.id.iteracjeValueTextView);
+
+        getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
     }
 
     @Override
@@ -89,7 +101,7 @@ public class RangingActivity extends AppCompatActivity implements BeaconConsumer
 
         switch (id) {
             case R.id.action_save:
-                pointCounter = Integer.parseInt(pointValueET.getText().toString())-1;
+                pointCounter = Integer.parseInt(pointValueET.getText().toString());
                 runOnUiThread(new Runnable() {
                     public void run() {
                         Toast.makeText(getApplicationContext(), "Zapisano zmiany!", Toast.LENGTH_SHORT).show();
@@ -103,9 +115,14 @@ public class RangingActivity extends AppCompatActivity implements BeaconConsumer
                     enableBluetooth();
                     initializeBeaconManager();
                 }
+                TimerTask tasknew = new TimerSchedulePeriod();
+                timer.schedule(new TimerSchedulePeriod(), 0, 180000);//180000
+
                 return true;
             case R.id.action_pause:
                 stopScanning();
+                timer.cancel();
+                timer.purge();
                 return true;
             default:
                 return super.onOptionsItemSelected(item);
@@ -114,7 +131,6 @@ public class RangingActivity extends AppCompatActivity implements BeaconConsumer
 
     @Override
     public void onBeaconServiceConnect() {
-        Region region = new Region("all-beacons-region", null, null, null);
         try {
             mBeaconManager.startRangingBeaconsInRegion(region);
         } catch (RemoteException e) {
@@ -127,8 +143,8 @@ public class RangingActivity extends AppCompatActivity implements BeaconConsumer
     public void didRangeBeaconsInRegion(Collection<Beacon> beacons, Region region) {
         runOnUiThread(new Runnable() {
             public void run() {
-                iteracje.setText(String.valueOf(counter2+1));
-                log.setText("Iteracja: "+String.valueOf(counter2)+"\n");
+                iteracje.setText(String.valueOf(counter2 + 1));
+                log.setText("Iteracja: " + String.valueOf(counter2) + "\n");
             }
         });
         for (final Beacon beacon : beacons) {
@@ -139,7 +155,7 @@ public class RangingActivity extends AppCompatActivity implements BeaconConsumer
 
 
                 switch (instanceId.toString()) {
-                    case "0x506b444b4c48":
+                    case "0x506b444b4c48"://Hf6n 506b444b4c48
                         dane[0][counter2] = beacon.getRssi();
                         break;
                     case "0x30636169506c":
@@ -147,6 +163,15 @@ public class RangingActivity extends AppCompatActivity implements BeaconConsumer
                         break;
                     case "0x6d767674636e":
                         dane[2][counter2] = beacon.getRssi();
+                        break;
+                    case "0x6f4334313146"://f5P9 6f4334313146
+                        dane[3][counter2] = beacon.getRssi();
+                        break;
+                    case "0x72796a446a62":
+                        dane[4][counter2] = beacon.getRssi();
+                        break;
+                    case "0x724335666650":
+                        dane[5][counter2] = beacon.getRssi();
                         break;
                 }
 
@@ -167,32 +192,48 @@ public class RangingActivity extends AppCompatActivity implements BeaconConsumer
             if (counter2 < ITERACJE) {
                 counter2++;
             } else {
-                counter2 = 0;
-                pointCounter++;
-                runOnUiThread(new Runnable() {
-                    public void run() {
-                        pointValueET.setText(String.valueOf(pointCounter));
-                        mp = MediaPlayer.create(getApplicationContext(), R.raw.helium);
-                        mp.start();
-                    }
-                });
-
-            /*// Build notification
-            Notification.Builder notifBuilder = new Notification.Builder(this);
-            notifBuilder.setContentTitle(getString(R.string.app_name));
-            notifBuilder.setSmallIcon(R.drawable.ic_pause_white_18dp);
-            notifBuilder.setContentText("Zakończono skanowanie");
-            notifBuilder.setDefaults(R.raw.helium);
-            notifBuilder.setAutoCancel(true);
-            NotificationManager mNotificationManager = (NotificationManager) getSystemService(Context.NOTIFICATION_SERVICE);
-            mNotificationManager.notify(0,notifBuilder.build());*/
-
                 showEndScanningAlert(region);
+                counter2 = 0;
             }
         }
     }
 
     private void showEndScanningAlert(final Region region) {
+
+        saveArrayToFile();
+
+        try {
+            mBeaconManager.stopRangingBeaconsInRegion(region);
+        } catch (RemoteException e) {
+            e.printStackTrace();
+        }
+
+        pointCounter++;
+        runOnUiThread(new Runnable() {
+            public void run() {
+                pointValueET.setText(String.valueOf(pointCounter));
+            }
+        });
+
+
+        /*
+        runOnUiThread(new Runnable() {//Play sound when scanning over
+                    public void run() {
+
+                        mp = MediaPlayer.create(getApplicationContext(), R.raw.helium);
+                        CountDownTimer cntr_aCounter = new CountDownTimer(10000, 1000) {
+                            public void onTick(long millisUntilFinished) {
+                                mp.start();
+                            }
+
+                            public void onFinish() {
+                                //code fire after finish
+                                mp.stop();
+                            }
+                        };cntr_aCounter.start();
+                    }
+                });
+
         final AlertDialog.Builder alertDialog = new AlertDialog.Builder(RangingActivity.this);
 
         // Setting Dialog Title
@@ -204,13 +245,19 @@ public class RangingActivity extends AppCompatActivity implements BeaconConsumer
         // Setting Positive "Yes" Button
         alertDialog.setPositiveButton("YES", new DialogInterface.OnClickListener() {
             public void onClick(DialogInterface dialog, int which) {
+                //mp.stop();
                 saveArrayToFile();
+                pointCounter++;
+                runOnUiThread(new Runnable() {
+                    public void run() {
+                        pointValueET.setText(String.valueOf(pointCounter));
+                    }
+                });
                 try {
                     mBeaconManager.startRangingBeaconsInRegion(region);
                 } catch (RemoteException e) {
                     e.printStackTrace();
                 }
-                mp.stop();
             }
         });
 
@@ -218,10 +265,16 @@ public class RangingActivity extends AppCompatActivity implements BeaconConsumer
         alertDialog.setNegativeButton("NO", new DialogInterface.OnClickListener() {
             public void onClick(DialogInterface dialog, int which) {
                 // Write your code here to invoke NO event
+                //mp.stop();
                 stopScanning();
                 saveArrayToFile();
                 dialog.cancel();
-                mp.stop();
+                pointCounter++;
+                runOnUiThread(new Runnable() {
+                    public void run() {
+                        pointValueET.setText(String.valueOf(pointCounter));
+                    }
+                });
             }
         });
         try {
@@ -236,7 +289,7 @@ public class RangingActivity extends AppCompatActivity implements BeaconConsumer
                 alertDialog.show();
             }
         });
-        Log.w("TAG", "Skonczono skanowanie w tym punkcie");
+        Log.w("TAG", "Skonczono skanowanie w tym punkcie");*/
     }
 
     private void saveArrayToFile() {
@@ -436,5 +489,29 @@ public class RangingActivity extends AppCompatActivity implements BeaconConsumer
     @Override
     public void onClick(View v) {
 
+    }
+
+    private class TimerSchedulePeriod extends TimerTask {
+        @Override
+        public void run() {
+            if(pointCounter<=120){
+                try {
+                    mBeaconManager.startRangingBeaconsInRegion(region);
+                } catch (RemoteException e) {
+                    e.printStackTrace();
+                }
+            }
+            else{
+                runOnUiThread(new Runnable() {
+                    @Override
+                    public void run() {
+                        getWindow().clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
+                    }
+                });
+                timer.cancel();
+                timer.purge();
+            }
+
+        }
     }
 }
